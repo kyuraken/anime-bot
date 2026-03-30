@@ -1,91 +1,106 @@
 const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
 const store = require("../utils/store");
 
-// ── Jikan API ────────────────────────────────────────────────
+const KITSU_HEADERS = { Accept: "application/vnd.api+json" };
+
+// ── Kitsu API ────────────────────────────────────────────────
 
 async function fetchRandomCharacter() {
-  // Retry up to 5 times to get a character with an image and an anime source
-  for (let i = 0; i < 5; i++) {
-    const res = await fetch("https://api.jikan.moe/v4/random/characters");
-    const json = await res.json();
-    const c = json.data;
-    if (c?.images?.jpg?.image_url && c.anime?.length) return c;
+  // Get total character count first
+  const countRes = await fetch("https://kitsu.io/api/edge/characters?page[limit]=1", { headers: KITSU_HEADERS });
+  const countJson = await countRes.json();
+  const total = Math.min(countJson.meta?.count || 5000, 10000);
+
+  // Pick a random offset and fetch that character
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const offset = Math.floor(Math.random() * total);
+    const charRes = await fetch(
+      `https://kitsu.io/api/edge/characters?page[limit]=1&page[offset]=${offset}`,
+      { headers: KITSU_HEADERS }
+    );
+    const charJson = await charRes.json();
+    const character = charJson.data?.[0];
+
+    if (!character) continue;
+    const name = character.attributes?.name;
+    const image = character.attributes?.image?.original;
+    if (!name || !image) continue;
+
+    // Fetch which anime this character is from
+    const mediaRes = await fetch(
+      `https://kitsu.io/api/edge/media-characters?filter[character_id]=${character.id}&include=media&page[limit]=1`,
+      { headers: KITSU_HEADERS }
+    );
+    const mediaJson = await mediaRes.json();
+    const media = mediaJson.included?.find((i) => i.type === "anime" || i.type === "manga");
+    const anime = media?.attributes?.canonicalTitle
+      || media?.attributes?.titles?.en
+      || media?.attributes?.titles?.en_jp
+      || null;
+
+    if (!anime) continue; // Skip if we can't find the anime name
+
+    return { name, image, anime };
   }
+
   return null;
 }
 
 // ── Helpers ──────────────────────────────────────────────────
 
-// Jikan returns names as "Surname, Firstname" — normalise both orders
-function getNameVariants(rawName) {
-  const parts = rawName.split(",").map((s) => s.trim());
-  const variants = [rawName];
-  if (parts.length === 2) {
-    variants.push(parts[1]);                    // First name only
-    variants.push(parts[0]);                    // Surname only
-    variants.push(`${parts[1]} ${parts[0]}`);   // Firstname Surname
-  }
-  return variants.map((v) => v.toLowerCase().replace(/[^a-z0-9 ]/g, "").trim());
-}
-
-function isCorrectGuess(guess, rawName) {
+function isCorrectGuess(guess, name) {
   const norm = (s) => s.toLowerCase().replace(/[^a-z0-9 ]/g, "").trim();
   const g = norm(guess);
-  return getNameVariants(rawName).some((v) => v === g);
+  const full = norm(name);
+  if (g === full) return true;
+  return full.split(" ").some((part) => part.length > 2 && part === g);
 }
 
-// Build a masked hint: "N_____ U_______"
-function maskName(rawName, revealCount = 0) {
-  return rawName.split(" ").map((word) =>
-    word.split("").map((ch, i) => {
-      if (ch === "," || ch === " ") return ch;
-      return i < 1 + revealCount ? ch : "▢";
-    }).join("")
+function maskName(name, revealCount = 0) {
+  return name.split(" ").map((word) =>
+    word.split("").map((ch, i) => (i <= revealCount ? ch : "▢")).join("")
   ).join(" ");
 }
 
-// ── Core game logic (shared between slash + prefix) ──────────
+// ── Core game ────────────────────────────────────────────────
 
-async function runGame(channel, starterId, starterName) {
+async function runGame(channel) {
   if (store.activeGames.has(channel.id)) {
     return channel.send("A guessing game is already running in this channel!");
   }
 
+  await channel.send("🎌 Loading a character...");
+
   let character;
-  try { character = await fetchRandomCharacter(); } catch { return channel.send("Could not fetch a character. Try again!"); }
+  try {
+    character = await fetchRandomCharacter();
+  } catch (err) {
+    return channel.send("Could not reach Kitsu API. Try again later!");
+  }
+
   if (!character) return channel.send("Could not find a valid character. Try again!");
 
-  const rawName   = character.name;
-  const image     = character.images.jpg.image_url;
-  const animeName = character.anime[0]?.anime?.title || "Unknown";
-  const nameLen   = rawName.replace(/,/g, "").trim().split(" ").map((w) => w.length).join(" + ");
+  const { name, image, anime } = character;
+  const wordLengths = name.split(" ").map((w) => w.length).join(" + ");
 
   store.activeGames.add(channel.id);
 
-  // ── Round 1: image + anime name ──────────────────────────
   await channel.send({
     embeds: [new EmbedBuilder()
       .setTitle("Who is this anime character? 🎌")
       .setImage(image)
       .setColor(0xe8467c)
       .addFields(
-        { name: "From", value: `**${animeName}**`, inline: true },
-        { name: "Name length", value: nameLen, inline: true },
+        { name: "From", value: `**${anime}**`, inline: true },
+        { name: "Name length", value: `${wordLengths} letters`, inline: true },
       )
-      .setFooter({ text: "Anyone can guess! You have 3 attempts • 30s each" })],
+      .setFooter({ text: "Anyone can guess! 3 attempts • 30s each • more letters revealed each round" })],
   });
-
-  const hints = [
-    maskName(rawName, 0),
-    maskName(rawName, 1),
-    maskName(rawName, 2),
-  ];
-  const hintLabels = ["First letter", "Two letters", "Three letters"];
 
   let winner = null;
 
   for (let attempt = 0; attempt < 3; attempt++) {
-    await channel.send(`💡 Hint: \`${hints[attempt]}\``);
+    await channel.send(`💡 Hint: \`${maskName(name, attempt)}\``);
 
     let collected;
     try {
@@ -96,23 +111,20 @@ async function runGame(channel, starterId, starterName) {
         errors: ["time"],
       });
     } catch {
-      break; // timed out
+      break;
     }
 
     const msg = collected.first();
-    if (isCorrectGuess(msg.content, rawName)) {
+    if (isCorrectGuess(msg.content, name)) {
       winner = msg.author;
       break;
     }
 
-    if (attempt < 2) {
-      await channel.send(`❌ Wrong! Next hint coming up... (${hintLabels[attempt + 1]})`);
-    }
+    if (attempt < 2) await channel.send("❌ Not quite! Here's a better hint...");
   }
 
   store.activeGames.delete(channel.id);
 
-  // ── Result ───────────────────────────────────────────────
   if (winner) {
     if (!store.guessScores[channel.guildId]) store.guessScores[channel.guildId] = {};
     const scores = store.guessScores[channel.guildId];
@@ -123,7 +135,7 @@ async function runGame(channel, starterId, starterName) {
     await channel.send({
       embeds: [new EmbedBuilder()
         .setTitle("🎉 Correct!")
-        .setDescription(`<@${winner.id}> got it!\nThe character is **${rawName}** from **${animeName}**.\nThey now have **${scores[winner.id].wins}** win${scores[winner.id].wins !== 1 ? "s" : ""}!`)
+        .setDescription(`<@${winner.id}> got it!\nThe character is **${name}** from **${anime}**.\nThey now have **${scores[winner.id].wins}** win${scores[winner.id].wins !== 1 ? "s" : ""}!`)
         .setImage(image)
         .setColor(0x2ecc71)],
     });
@@ -131,26 +143,26 @@ async function runGame(channel, starterId, starterName) {
     await channel.send({
       embeds: [new EmbedBuilder()
         .setTitle("Nobody got it!")
-        .setDescription(`The character was **${rawName}** from **${animeName}**.`)
+        .setDescription(`The character was **${name}** from **${anime}**.`)
         .setImage(image)
         .setColor(0xe74c3c)],
     });
   }
 }
 
-// ── Command export ───────────────────────────────────────────
+// ── Export ───────────────────────────────────────────────────
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName("guess")
-    .setDescription("Start an anime character guessing game — anyone in the channel can answer!"),
+    .setDescription("Start an anime character guessing game — anyone can answer!"),
 
   async execute(interaction) {
-    await interaction.reply({ content: "Starting the game...", ephemeral: true });
-    await runGame(interaction.channel, interaction.user.id, interaction.user.username);
+    await interaction.reply({ content: "Starting the game!", ephemeral: true });
+    await runGame(interaction.channel);
   },
 
   async prefixRun(message) {
-    await runGame(message.channel, message.author.id, message.author.username);
+    await runGame(message.channel);
   },
 };
