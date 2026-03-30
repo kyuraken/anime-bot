@@ -29,6 +29,7 @@ const {
   EmbedBuilder,
   ButtonBuilder,
   ButtonStyle,
+  MessageFlags,
 } = require("discord.js");
 
 // watchingMap[guildId][userId] = [ { id, title, imageUrl, username, score? } ]
@@ -395,7 +396,7 @@ const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.DirectMessages],
 });
 
-client.once("ready", async () => {
+client.once("clientReady", async () => {
   console.log(`Logged in as ${client.user.tag}`);
   const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
   try {
@@ -420,7 +421,7 @@ client.on("interactionCreate", async (interaction) => {
 
   // ── /seasonal ──────────────────────────────────────────
   if (interaction.isChatInputCommand() && interaction.commandName === "seasonal") {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     let result;
     try {
@@ -444,7 +445,7 @@ client.on("interactionCreate", async (interaction) => {
 
   // ── /watch ─────────────────────────────────────────────
   if (interaction.isChatInputCommand() && interaction.commandName === "watch") {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     const searchTerm = interaction.options.getString("query");
     let animeList;
@@ -477,7 +478,7 @@ client.on("interactionCreate", async (interaction) => {
   if (interaction.isChatInputCommand() && interaction.commandName === "list") {
     const userList = watchingMap[guildId]?.[interaction.user.id];
     if (!userList?.length) {
-      return interaction.reply({ content: "You're not watching anything yet! Use `/watch` to find anime.", ephemeral: true });
+      return interaction.reply({ content: "You're not watching anything yet! Use `/watch` to find anime.", flags: MessageFlags.Ephemeral });
     }
 
     const embed = new EmbedBuilder()
@@ -492,17 +493,17 @@ client.on("interactionCreate", async (interaction) => {
       )
       .setFooter({ text: "Use /score to rate • /clear to remove • /watch to add more" });
 
-    await interaction.reply({ embeds: [embed], ephemeral: true });
+    await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
   }
 
   // ── /profile @user ─────────────────────────────────────
   if (interaction.isChatInputCommand() && interaction.commandName === "profile") {
     const target = interaction.options.getUser("user");
-    if (target.bot) return interaction.reply({ content: "Bots don't watch anime.", ephemeral: true });
+    if (target.bot) return interaction.reply({ content: "Bots don't watch anime.", flags: MessageFlags.Ephemeral });
 
     const userList = watchingMap[guildId]?.[target.id];
     if (!userList?.length) {
-      return interaction.reply({ content: `**${target.displayName}** isn't watching anything yet!`, ephemeral: true });
+      return interaction.reply({ content: `**${target.displayName}** isn't watching anything yet!`, flags: MessageFlags.Ephemeral });
     }
 
     const embed = new EmbedBuilder()
@@ -524,15 +525,15 @@ client.on("interactionCreate", async (interaction) => {
   if (interaction.isChatInputCommand() && interaction.commandName === "compare") {
     const target = interaction.options.getUser("user");
     if (target.id === interaction.user.id) {
-      return interaction.reply({ content: "You can't compare with yourself!", ephemeral: true });
+      return interaction.reply({ content: "You can't compare with yourself!", flags: MessageFlags.Ephemeral });
     }
-    if (target.bot) return interaction.reply({ content: "Bots don't watch anime.", ephemeral: true });
+    if (target.bot) return interaction.reply({ content: "Bots don't watch anime.", flags: MessageFlags.Ephemeral });
 
     const myList = watchingMap[guildId]?.[interaction.user.id] || [];
     const theirList = watchingMap[guildId]?.[target.id] || [];
 
-    if (!myList.length) return interaction.reply({ content: "You're not watching anything yet!", ephemeral: true });
-    if (!theirList.length) return interaction.reply({ content: `**${target.displayName}** isn't watching anything yet!`, ephemeral: true });
+    if (!myList.length) return interaction.reply({ content: "You're not watching anything yet!", flags: MessageFlags.Ephemeral });
+    if (!theirList.length) return interaction.reply({ content: `**${target.displayName}** isn't watching anything yet!`, flags: MessageFlags.Ephemeral });
 
     const theirIds = new Set(theirList.map((w) => w.id));
     const shared = myList.filter((w) => theirIds.has(w.id));
@@ -561,7 +562,7 @@ client.on("interactionCreate", async (interaction) => {
   if (interaction.isChatInputCommand() && interaction.commandName === "group") {
     const entries = Object.entries(watchingMap[guildId] || {});
     if (!entries.length) {
-      return interaction.reply({ content: "Nobody is watching anything yet! Use `/watch` to start.", ephemeral: true });
+      return interaction.reply({ content: "Nobody is watching anything yet! Use `/watch` to start.", flags: MessageFlags.Ephemeral });
     }
 
     const embed = new EmbedBuilder()
@@ -581,7 +582,7 @@ client.on("interactionCreate", async (interaction) => {
   if (interaction.isChatInputCommand() && interaction.commandName === "top") {
     const entries = Object.entries(watchingMap[guildId] || {});
     if (!entries.length) {
-      return interaction.reply({ content: "Nobody is watching anything yet!", ephemeral: true });
+      return interaction.reply({ content: "Nobody is watching anything yet!", flags: MessageFlags.Ephemeral });
     }
 
     const animeCounts = {};
@@ -611,7 +612,7 @@ client.on("interactionCreate", async (interaction) => {
 
   // ── /recommend ─────────────────────────────────────────
   if (interaction.isChatInputCommand() && interaction.commandName === "recommend") {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     const userList = watchingMap[guildId]?.[interaction.user.id];
     if (!userList?.length) return interaction.editReply("You're not watching anything yet! Use `/watch` first.");
@@ -652,7 +653,7 @@ client.on("interactionCreate", async (interaction) => {
 
   // ── /random ────────────────────────────────────────────
   if (interaction.isChatInputCommand() && interaction.commandName === "random") {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     let result;
     try {
@@ -676,7 +677,7 @@ client.on("interactionCreate", async (interaction) => {
 
   // ── /genre ─────────────────────────────────────────────
   if (interaction.isChatInputCommand() && interaction.commandName === "genre") {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     const genre = interaction.options.getString("name");
     let animeList;
@@ -727,12 +728,12 @@ client.on("interactionCreate", async (interaction) => {
     const rating = Math.round(rawRating * 10) / 10; // Round to one decimal place
 
     if (rating < 1 || rating > 10) {
-      return interaction.reply({ content: "Rating must be between 1.0 and 10.0.", ephemeral: true });
+      return interaction.reply({ content: "Rating must be between 1.0 and 10.0.", flags: MessageFlags.Ephemeral });
     }
     const userList = watchingMap[guildId]?.[interaction.user.id];
 
     if (!userList?.length) {
-      return interaction.reply({ content: "You're not watching anything to rate! Use `/watch` first.", ephemeral: true });
+      return interaction.reply({ content: "You're not watching anything to rate! Use `/watch` first.", flags: MessageFlags.Ephemeral });
     }
 
     // If only one anime, rate it directly
@@ -740,7 +741,7 @@ client.on("interactionCreate", async (interaction) => {
       userList[0].score = rating;
       return interaction.reply({
         content: `Rated **${userList[0].title}**: ${scoreStars(rating)} (${rating}/10)`,
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
 
@@ -761,7 +762,7 @@ client.on("interactionCreate", async (interaction) => {
     await interaction.reply({
       content: `Which anime would you like to rate **${rating}/10**?`,
       components: [new ActionRowBuilder().addComponents(selectMenu)],
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
 
@@ -769,7 +770,7 @@ client.on("interactionCreate", async (interaction) => {
   if (interaction.isChatInputCommand() && interaction.commandName === "remind") {
     const userList = watchingMap[guildId]?.[interaction.user.id];
     if (!userList?.length) {
-      return interaction.reply({ content: "You're not watching anything yet! Use `/watch` first.", ephemeral: true });
+      return interaction.reply({ content: "You're not watching anything yet! Use `/watch` first.", flags: MessageFlags.Ephemeral });
     }
 
     const options = userList.map((w) => ({
@@ -786,7 +787,7 @@ client.on("interactionCreate", async (interaction) => {
     await interaction.reply({
       content: "Pick an anime and I'll DM you when the next episode airs!",
       components: [new ActionRowBuilder().addComponents(selectMenu)],
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
 
@@ -1011,7 +1012,7 @@ client.on("interactionCreate", async (interaction) => {
   // ── /clear ─────────────────────────────────────────────
   if (interaction.isChatInputCommand() && interaction.commandName === "clear") {
     const userList = watchingMap[guildId]?.[interaction.user.id];
-    if (!userList?.length) return interaction.reply({ content: "You're not watching anything!", ephemeral: true });
+    if (!userList?.length) return interaction.reply({ content: "You're not watching anything!", flags: MessageFlags.Ephemeral });
 
     const options = [
       { label: "Clear All", description: "Remove everything from your watchlist", value: "__clear_all__" },
@@ -1030,7 +1031,7 @@ client.on("interactionCreate", async (interaction) => {
     await interaction.reply({
       content: "Which anime do you want to remove?",
       components: [new ActionRowBuilder().addComponents(selectMenu)],
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
 
@@ -1039,7 +1040,7 @@ client.on("interactionCreate", async (interaction) => {
     const username = interaction.options.getString("username");
 
     // Verify the username exists on AniList before saving
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     let animeList;
     try {
       animeList = await fetchAniListWatching(username);
@@ -1058,21 +1059,21 @@ client.on("interactionCreate", async (interaction) => {
   // ── /unlink ────────────────────────────────────────────
   if (interaction.isChatInputCommand() && interaction.commandName === "unlink") {
     if (!linkedAccounts[guildId]?.[interaction.user.id]) {
-      return interaction.reply({ content: "You don't have an AniList account linked.", ephemeral: true });
+      return interaction.reply({ content: "You don't have an AniList account linked.", flags: MessageFlags.Ephemeral });
     }
     const { anilistUsername } = linkedAccounts[guildId][interaction.user.id];
     delete linkedAccounts[guildId][interaction.user.id];
-    await interaction.reply({ content: `Unlinked AniList account **${anilistUsername}**.`, ephemeral: true });
+    await interaction.reply({ content: `Unlinked AniList account **${anilistUsername}**.`, flags: MessageFlags.Ephemeral });
   }
 
   // ── /sync ──────────────────────────────────────────────
   if (interaction.isChatInputCommand() && interaction.commandName === "sync") {
     const linked = linkedAccounts[guildId]?.[interaction.user.id];
     if (!linked) {
-      return interaction.reply({ content: "You haven't linked an AniList account yet. Use `/link <username>` first.", ephemeral: true });
+      return interaction.reply({ content: "You haven't linked an AniList account yet. Use `/link <username>` first.", flags: MessageFlags.Ephemeral });
     }
 
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     let animeList;
     try {
