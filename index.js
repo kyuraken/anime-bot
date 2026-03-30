@@ -1095,6 +1095,7 @@ client.on("interactionCreate", async (interaction) => {
         const title = anime.title.english || anime.title.romaji;
         userList.push({ id: anime.id, title, imageUrl: anime.coverImage.medium, username: interaction.user.username });
         added.push(title);
+        existingIds.add(anime.id);
       }
     }
 
