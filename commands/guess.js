@@ -1,48 +1,26 @@
 const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
 const store = require("../utils/store");
 
-const KITSU_HEADERS = { Accept: "application/vnd.api+json" };
+// ── nekos.best API ───────────────────────────────────────────
+// Free, no API key, returns image + character name + anime name
 
-// ── Kitsu API ────────────────────────────────────────────────
+const CATEGORIES = ["neko", "waifu", "husbando", "kitsune"];
 
 async function fetchRandomCharacter() {
-  // Get total character count first
-  const countRes = await fetch("https://kitsu.io/api/edge/characters?page[limit]=1", { headers: KITSU_HEADERS });
-  const countJson = await countRes.json();
-  const total = Math.min(countJson.meta?.count || 5000, 10000);
-
-  // Pick a random offset and fetch that character
   for (let attempt = 0; attempt < 5; attempt++) {
-    const offset = Math.floor(Math.random() * total);
-    const charRes = await fetch(
-      `https://kitsu.io/api/edge/characters?page[limit]=1&page[offset]=${offset}`,
-      { headers: KITSU_HEADERS }
-    );
-    const charJson = await charRes.json();
-    const character = charJson.data?.[0];
+    const category = CATEGORIES[Math.floor(Math.random() * CATEGORIES.length)];
+    const res = await fetch(`https://nekos.best/api/v2/${category}`);
+    const json = await res.json();
+    const result = json.results?.[0];
 
-    if (!character) continue;
-    const name = character.attributes?.name;
-    const image = character.attributes?.image?.original;
-    if (!name || !image) continue;
-
-    // Fetch which anime this character is from
-    const mediaRes = await fetch(
-      `https://kitsu.io/api/edge/media-characters?filter[character_id]=${character.id}&include=media&page[limit]=1`,
-      { headers: KITSU_HEADERS }
-    );
-    const mediaJson = await mediaRes.json();
-    const media = mediaJson.included?.find((i) => i.type === "anime" || i.type === "manga");
-    const anime = media?.attributes?.canonicalTitle
-      || media?.attributes?.titles?.en
-      || media?.attributes?.titles?.en_jp
-      || null;
-
-    if (!anime) continue; // Skip if we can't find the anime name
-
-    return { name, image, anime };
+    if (result?.character_name && result?.anime_name && result?.url) {
+      return {
+        name: result.character_name,
+        anime: result.anime_name,
+        image: result.url,
+      };
+    }
   }
-
   return null;
 }
 
@@ -69,16 +47,14 @@ async function runGame(channel) {
     return channel.send("A guessing game is already running in this channel!");
   }
 
-  await channel.send("🎌 Loading a character...");
-
   let character;
   try {
     character = await fetchRandomCharacter();
-  } catch (err) {
-    return channel.send("Could not reach Kitsu API. Try again later!");
+  } catch {
+    return channel.send("Could not reach the API. Try again later!");
   }
 
-  if (!character) return channel.send("Could not find a valid character. Try again!");
+  if (!character) return channel.send("Could not load a character. Try again!");
 
   const { name, image, anime } = character;
   const wordLengths = name.split(" ").map((w) => w.length).join(" + ");
