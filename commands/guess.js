@@ -1,27 +1,35 @@
 const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
 const store = require("../utils/store");
 
-// ── nekos.best API ───────────────────────────────────────────
-// Free, no API key, returns image + character name + anime name
-
-const CATEGORIES = ["neko", "waifu", "husbando", "kitsune"];
+// ── Jikan API (paginated list — more reliable than /random) ──
 
 async function fetchRandomCharacter() {
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const category = CATEGORIES[Math.floor(Math.random() * CATEGORIES.length)];
-    const res = await fetch(`https://nekos.best/api/v2/${category}`);
-    const json = await res.json();
-    const result = json.results?.[0];
+  // Pick from top 500 most-favourited characters (recognisable for guessing)
+  const page = Math.floor(Math.random() * 500) + 1;
 
-    if (result?.character_name && result?.anime_name && result?.url) {
-      return {
-        name: result.character_name,
-        anime: result.anime_name,
-        image: result.url,
-      };
-    }
-  }
-  return null;
+  const charRes = await fetch(
+    `https://api.jikan.moe/v4/characters?order_by=favorites&sort=desc&page=${page}&limit=1`
+  );
+  const charJson = await charRes.json();
+  const character = charJson.data?.[0];
+
+  if (!character?.mal_id || !character?.name || !character?.images?.jpg?.image_url) return null;
+
+  const id    = character.mal_id;
+  const name  = character.name;
+  const image = character.images.jpg.image_url;
+
+  // Small delay to respect Jikan rate limit (3 req/s)
+  await new Promise((r) => setTimeout(r, 400));
+
+  // Fetch which anime this character appears in
+  const animeRes = await fetch(`https://api.jikan.moe/v4/characters/${id}/anime`);
+  const animeJson = await animeRes.json();
+  const anime = animeJson.data?.[0]?.anime?.title;
+
+  if (!anime) return null;
+
+  return { name, image, anime };
 }
 
 // ── Helpers ──────────────────────────────────────────────────
@@ -31,6 +39,7 @@ function isCorrectGuess(guess, name) {
   const g = norm(guess);
   const full = norm(name);
   if (g === full) return true;
+  // Also accept just first or last name (if longer than 2 chars)
   return full.split(" ").some((part) => part.length > 2 && part === g);
 }
 
@@ -47,11 +56,19 @@ async function runGame(channel) {
     return channel.send("A guessing game is already running in this channel!");
   }
 
+  await channel.send("🎌 Loading a character...");
+
   let character;
   try {
-    character = await fetchRandomCharacter();
-  } catch {
-    return channel.send("Could not reach the API. Try again later!");
+    // Retry up to 3 times in case a page has no data
+    for (let i = 0; i < 3; i++) {
+      character = await fetchRandomCharacter();
+      if (character) break;
+      await new Promise((r) => setTimeout(r, 500));
+    }
+  } catch (err) {
+    console.error("Guess error:", err);
+    return channel.send("Could not reach Jikan API. Try again later!");
   }
 
   if (!character) return channel.send("Could not load a character. Try again!");
@@ -87,7 +104,7 @@ async function runGame(channel) {
         errors: ["time"],
       });
     } catch {
-      break;
+      break; // timed out
     }
 
     const msg = collected.first();
