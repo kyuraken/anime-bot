@@ -393,7 +393,12 @@ const commands = [
 // ── Bot Setup ────────────────────────────────────────────────
 
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.DirectMessages],
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.DirectMessages,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
+  ],
 });
 
 client.once("clientReady", async () => {
@@ -1112,6 +1117,357 @@ client.on("interactionCreate", async (interaction) => {
       .setFooter({ text: `${added.length} anime added • Use /list to see your full watchlist` });
 
     await interaction.editReply({ embeds: [embed] });
+  }
+});
+
+// ── Prefix Command Handler (tako <command>) ──────────────────
+
+client.on("messageCreate", async (message) => {
+  if (message.author.bot) return;
+  if (!message.content.toLowerCase().startsWith("tako")) return;
+
+  const args = message.content.slice(4).trim().split(/\s+/);
+  const command = args.shift()?.toLowerCase();
+  const rest = args.join(" ").trim();
+  const guildId = message.guildId;
+  if (!watchingMap[guildId]) watchingMap[guildId] = {};
+
+  // Helper: wait for a numbered reply from the same user
+  async function awaitNumber(prompt, max) {
+    const msg = await message.reply(prompt);
+    let collected;
+    try {
+      collected = await message.channel.awaitMessages({
+        filter: (m) => m.author.id === message.author.id && /^\d+$/.test(m.content.trim()),
+        max: 1,
+        time: 30000,
+        errors: ["time"],
+      });
+    } catch {
+      await msg.edit("Timed out — try again.");
+      return null;
+    }
+    const pick = parseInt(collected.first().content.trim());
+    if (pick < 1 || pick > max) { await message.reply(`Please pick a number between 1 and ${max}.`); return null; }
+    return pick - 1;
+  }
+
+  // tako seasonal
+  if (command === "seasonal") {
+    let result;
+    try { result = await fetchSeasonalAnime(1); } catch { return message.reply("Could not fetch seasonal anime."); }
+    const { media, pageInfo } = result;
+    const { season, year } = getCurrentSeason();
+    const embed = buildSeasonalListEmbed(media, pageInfo, season, year);
+    return message.reply({ embeds: [embed] });
+  }
+
+  // tako watch <query>
+  if (command === "watch") {
+    if (!rest) return message.reply("Usage: `tako watch <anime name>`");
+    let animeList;
+    try { animeList = await searchAnime(rest); } catch { return message.reply("Could not search anime."); }
+    if (!animeList?.length) return message.reply(`No results for "**${rest}**".`);
+
+    const listed = animeList.slice(0, 10);
+    const embed = new EmbedBuilder()
+      .setTitle(`Search: "${rest}"`)
+      .setColor(0x3498db)
+      .setDescription(listed.map((a, i) => {
+        const title = a.title.english || a.title.romaji;
+        const score = a.averageScore ? `⭐ ${a.averageScore}%` : "";
+        return `**${i + 1}.** [${title}](https://anilist.co/anime/${a.id}) ${score}`;
+      }).join("\n"))
+      .setFooter({ text: "Reply with a number to add it to your watchlist" });
+
+    await message.reply({ embeds: [embed] });
+
+    const pick = await awaitNumber("Which one? (reply with a number)", listed.length);
+    if (pick === null) return;
+
+    const anime = listed[pick];
+    const title = anime.title.english || anime.title.romaji;
+    const userList = watchingMap[guildId][message.author.id] || [];
+
+    if (userList.some((w) => w.id === anime.id)) return message.reply(`You're already watching **${title}**!`);
+
+    userList.push({ id: anime.id, title, imageUrl: anime.coverImage.medium, username: message.author.username });
+    watchingMap[guildId][message.author.id] = userList;
+
+    const announceEmbed = new EmbedBuilder()
+      .setAuthor({ name: `${message.member?.displayName || message.author.username} is now watching...`, iconURL: message.author.displayAvatarURL() })
+      .setTitle(title)
+      .setURL(`https://anilist.co/anime/${anime.id}`)
+      .setThumbnail(anime.coverImage.large || anime.coverImage.medium)
+      .setColor(0xe8467c);
+    if (anime.genres?.length) announceEmbed.addFields({ name: "Genres", value: anime.genres.slice(0, 4).join(", "), inline: true });
+    if (anime.averageScore) announceEmbed.addFields({ name: "Score", value: `⭐ ${anime.averageScore}%`, inline: true });
+
+    return message.channel.send({ embeds: [announceEmbed] });
+  }
+
+  // tako list
+  if (command === "list") {
+    const userList = watchingMap[guildId]?.[message.author.id];
+    if (!userList?.length) return message.reply("You're not watching anything yet! Use `tako watch <name>` to add anime.");
+    const embed = new EmbedBuilder()
+      .setTitle(`${message.member?.displayName || message.author.username}'s Watchlist`)
+      .setThumbnail(message.author.displayAvatarURL())
+      .setColor(0xe8467c)
+      .setDescription(userList.map((w, i) => {
+        const scoreStr = w.score ? ` — ${scoreStars(w.score)} (${w.score}/10)` : "";
+        return `**${i + 1}.** [${w.title}](https://anilist.co/anime/${w.id})${scoreStr}`;
+      }).join("\n"));
+    return message.reply({ embeds: [embed] });
+  }
+
+  // tako profile @user
+  if (command === "profile") {
+    const target = message.mentions.users.first();
+    if (!target) return message.reply("Usage: `tako profile @user`");
+    const userList = watchingMap[guildId]?.[target.id];
+    if (!userList?.length) return message.reply(`**${target.username}** isn't watching anything yet!`);
+    const embed = new EmbedBuilder()
+      .setTitle(`${target.username}'s Watchlist`)
+      .setThumbnail(target.displayAvatarURL())
+      .setColor(0x3498db)
+      .setDescription(userList.map((w, i) => {
+        const scoreStr = w.score ? ` — ${scoreStars(w.score)} (${w.score}/10)` : "";
+        return `**${i + 1}.** [${w.title}](https://anilist.co/anime/${w.id})${scoreStr}`;
+      }).join("\n"));
+    return message.reply({ embeds: [embed] });
+  }
+
+  // tako group
+  if (command === "group") {
+    const entries = Object.entries(watchingMap[guildId] || {});
+    if (!entries.length) return message.reply("Nobody is watching anything yet!");
+    const embed = new EmbedBuilder()
+      .setTitle("Currently Watching on This Server")
+      .setColor(0x1db954)
+      .setDescription(entries.map(([uid, list]) => `<@${uid}> — ${list.map((w) => `**${w.title}**`).join(", ")}`).join("\n"));
+    return message.reply({ embeds: [embed] });
+  }
+
+  // tako top
+  if (command === "top") {
+    const entries = Object.entries(watchingMap[guildId] || {});
+    if (!entries.length) return message.reply("Nobody is watching anything yet!");
+    const animeCounts = {};
+    for (const [, list] of entries) for (const w of list) {
+      if (!animeCounts[w.title]) animeCounts[w.title] = { count: 0, imageUrl: w.imageUrl, id: w.id };
+      animeCounts[w.title].count++;
+    }
+    const sorted = Object.entries(animeCounts).sort(([, a], [, b]) => b.count - a.count).slice(0, 10);
+    const medals = ["🥇", "🥈", "🥉"];
+    const embed = new EmbedBuilder()
+      .setTitle("Most Popular Anime on This Server")
+      .setColor(0xf1c40f)
+      .setDescription(sorted.map(([title, data], i) =>
+        `${medals[i] || `**${i + 1}.**`} [${title}](https://anilist.co/anime/${data.id}) — ${data.count} watcher${data.count !== 1 ? "s" : ""}`
+      ).join("\n"));
+    if (sorted[0]?.[1]?.imageUrl) embed.setThumbnail(sorted[0][1].imageUrl);
+    return message.reply({ embeds: [embed] });
+  }
+
+  // tako random
+  if (command === "random") {
+    let result;
+    try { result = await fetchSeasonalAnime(1); } catch { return message.reply("Could not fetch anime."); }
+    const anime = result.media[Math.floor(Math.random() * result.media.length)];
+    const embed = buildAnimeEmbed(anime).setAuthor({ name: "Random pick from this season!" });
+
+    await message.reply({ embeds: [embed] });
+
+    const pick = await awaitNumber("Want to add it to your watchlist? Reply `1` to add or ignore to skip.", 1);
+    if (pick === null) return;
+
+    const title = anime.title.english || anime.title.romaji;
+    const userList = watchingMap[guildId][message.author.id] || [];
+    if (userList.some((w) => w.id === anime.id)) return message.reply(`You're already watching **${title}**!`);
+    userList.push({ id: anime.id, title, imageUrl: anime.coverImage.medium, username: message.author.username });
+    watchingMap[guildId][message.author.id] = userList;
+    return message.reply(`Added **${title}** to your watchlist!`);
+  }
+
+  // tako genre <genre>
+  if (command === "genre") {
+    if (!rest) return message.reply("Usage: `tako genre <genre>` (e.g. `tako genre Action`)");
+    let animeList;
+    try { animeList = await fetchSeasonalByGenre(rest); } catch { return message.reply("Could not fetch anime."); }
+    if (!animeList?.length) return message.reply(`No seasonal anime found for genre "**${rest}**".`);
+    const { season, year } = getCurrentSeason();
+    const listed = animeList.slice(0, 10);
+    const embed = new EmbedBuilder()
+      .setTitle(`${season} ${year} — ${rest} Anime`)
+      .setColor(0xe67e22)
+      .setDescription(listed.map((a, i) => {
+        const title = a.title.english || a.title.romaji;
+        const score = a.averageScore ? `⭐ ${a.averageScore}%` : "";
+        return `**${i + 1}.** [${title}](https://anilist.co/anime/${a.id}) ${score}`;
+      }).join("\n"))
+      .setFooter({ text: "Reply with a number to add to your watchlist" });
+    await message.reply({ embeds: [embed] });
+
+    const pick = await awaitNumber("Which one?", listed.length);
+    if (pick === null) return;
+    const anime = listed[pick];
+    const title = anime.title.english || anime.title.romaji;
+    const userList = watchingMap[guildId][message.author.id] || [];
+    if (userList.some((w) => w.id === anime.id)) return message.reply(`You're already watching **${title}**!`);
+    userList.push({ id: anime.id, title, imageUrl: anime.coverImage.medium, username: message.author.username });
+    watchingMap[guildId][message.author.id] = userList;
+    return message.reply(`Added **${title}** to your watchlist!`);
+  }
+
+  // tako compare @user
+  if (command === "compare") {
+    const target = message.mentions.users.first();
+    if (!target) return message.reply("Usage: `tako compare @user`");
+    const myList = watchingMap[guildId]?.[message.author.id] || [];
+    const theirList = watchingMap[guildId]?.[target.id] || [];
+    if (!myList.length) return message.reply("You're not watching anything yet!");
+    if (!theirList.length) return message.reply(`**${target.username}** isn't watching anything yet!`);
+    const theirIds = new Set(theirList.map((w) => w.id));
+    const shared = myList.filter((w) => theirIds.has(w.id));
+    if (!shared.length) return message.reply(`You and **${target.username}** have no anime in common!`);
+    const embed = new EmbedBuilder()
+      .setTitle(`You & ${target.username} both watch...`)
+      .setColor(0x2ecc71)
+      .setDescription(shared.map((w) => `• [${w.title}](https://anilist.co/anime/${w.id})`).join("\n"))
+      .setFooter({ text: `${shared.length} anime in common` });
+    return message.reply({ embeds: [embed] });
+  }
+
+  // tako score <rating>
+  if (command === "score") {
+    const rawRating = parseFloat(rest);
+    if (isNaN(rawRating) || rawRating < 1 || rawRating > 10) return message.reply("Usage: `tako score <1.0–10.0>` (e.g. `tako score 8.5`)");
+    const rating = Math.round(rawRating * 10) / 10;
+    const userList = watchingMap[guildId]?.[message.author.id];
+    if (!userList?.length) return message.reply("You're not watching anything to rate!");
+    if (userList.length === 1) {
+      userList[0].score = rating;
+      return message.reply(`Rated **${userList[0].title}**: ${scoreStars(rating)} (${rating}/10)`);
+    }
+    const embed = new EmbedBuilder()
+      .setTitle("Which anime are you rating?")
+      .setColor(0xe8467c)
+      .setDescription(userList.map((w, i) => `**${i + 1}.** ${w.title}${w.score ? ` (currently ${w.score}/10)` : ""}`).join("\n"));
+    await message.reply({ embeds: [embed] });
+    const pick = await awaitNumber("Reply with a number:", userList.length);
+    if (pick === null) return;
+    userList[pick].score = rating;
+    return message.reply(`Rated **${userList[pick].title}**: ${scoreStars(rating)} (${rating}/10)`);
+  }
+
+  // tako clear
+  if (command === "clear") {
+    const userList = watchingMap[guildId]?.[message.author.id];
+    if (!userList?.length) return message.reply("You're not watching anything!");
+    const embed = new EmbedBuilder()
+      .setTitle("Remove from watchlist")
+      .setColor(0xe74c3c)
+      .setDescription([
+        "**0.** Clear all",
+        ...userList.map((w, i) => `**${i + 1}.** ${w.title}`),
+      ].join("\n"))
+      .setFooter({ text: "Reply with a number (0 = clear all)" });
+    await message.reply({ embeds: [embed] });
+
+    let collected;
+    try {
+      collected = await message.channel.awaitMessages({
+        filter: (m) => m.author.id === message.author.id && /^\d+$/.test(m.content.trim()),
+        max: 1, time: 30000, errors: ["time"],
+      });
+    } catch { return message.reply("Timed out."); }
+
+    const pick = parseInt(collected.first().content.trim());
+    if (pick === 0) {
+      delete watchingMap[guildId][message.author.id];
+      return message.reply("Cleared your entire watchlist.");
+    }
+    if (pick < 1 || pick > userList.length) return message.reply("Invalid number.");
+    const removed = userList.splice(pick - 1, 1)[0];
+    if (!userList.length) delete watchingMap[guildId][message.author.id];
+    return message.reply(`Removed **${removed.title}** from your watchlist.`);
+  }
+
+  // tako link <username>
+  if (command === "link") {
+    if (!rest) return message.reply("Usage: `tako link <anilist username>`");
+    let animeList;
+    try { animeList = await fetchAniListWatching(rest); } catch { return message.reply(`Could not find AniList user "**${rest}**". Check the username and try again.`); }
+    if (!linkedAccounts[guildId]) linkedAccounts[guildId] = {};
+    linkedAccounts[guildId][message.author.id] = { anilistUsername: rest };
+    return message.reply(`Linked to AniList account **${rest}**! Currently watching **${animeList.length}** anime. Use \`tako sync\` to import them.`);
+  }
+
+  // tako unlink
+  if (command === "unlink") {
+    if (!linkedAccounts[guildId]?.[message.author.id]) return message.reply("You don't have an AniList account linked.");
+    const { anilistUsername } = linkedAccounts[guildId][message.author.id];
+    delete linkedAccounts[guildId][message.author.id];
+    return message.reply(`Unlinked AniList account **${anilistUsername}**.`);
+  }
+
+  // tako sync
+  if (command === "sync") {
+    const linked = linkedAccounts[guildId]?.[message.author.id];
+    if (!linked) return message.reply("You haven't linked an AniList account yet. Use `tako link <username>` first.");
+    let animeList;
+    try { animeList = await fetchAniListWatching(linked.anilistUsername); } catch { return message.reply("Could not fetch your AniList list. Try again later."); }
+    if (!animeList.length) return message.reply("Your AniList watching list is empty — nothing to sync!");
+    const userList = watchingMap[guildId][message.author.id] || [];
+    const existingIds = new Set(userList.map((w) => w.id));
+    const added = [];
+    for (const anime of animeList) {
+      if (!existingIds.has(anime.id)) {
+        const title = anime.title.english || anime.title.romaji;
+        userList.push({ id: anime.id, title, imageUrl: anime.coverImage.medium, username: message.author.username });
+        added.push(title);
+      }
+    }
+    watchingMap[guildId][message.author.id] = userList;
+    if (!added.length) return message.reply("Everything from your AniList is already in your watchlist!");
+    const embed = new EmbedBuilder()
+      .setTitle(`Synced from AniList: ${linked.anilistUsername}`)
+      .setColor(0x02a9ff)
+      .setDescription(added.map((t) => `• ${t}`).join("\n"))
+      .setFooter({ text: `${added.length} anime added` });
+    return message.reply({ embeds: [embed] });
+  }
+
+  // tako recommend
+  if (command === "recommend") {
+    const userList = watchingMap[guildId]?.[message.author.id];
+    if (!userList?.length) return message.reply("You're not watching anything yet! Use `tako watch <name>` first.");
+    const base = userList[Math.floor(Math.random() * userList.length)];
+    let recs;
+    try { recs = await fetchRecommendations(base.id); } catch { return message.reply("Could not fetch recommendations."); }
+    if (!recs?.length) return message.reply(`No recommendations found for **${base.title}**.`);
+    const listed = recs.slice(0, 10);
+    const embed = new EmbedBuilder()
+      .setTitle(`Recommendations based on: ${base.title}`)
+      .setColor(0x9b59b6)
+      .setThumbnail(base.imageUrl)
+      .setDescription(listed.map((a, i) => {
+        const title = a.title.english || a.title.romaji;
+        const score = a.averageScore ? `⭐ ${a.averageScore}%` : "";
+        return `**${i + 1}.** [${title}](https://anilist.co/anime/${a.id}) ${score}`;
+      }).join("\n"))
+      .setFooter({ text: "Reply with a number to add to your watchlist" });
+    await message.reply({ embeds: [embed] });
+    const pick = await awaitNumber("Which one?", listed.length);
+    if (pick === null) return;
+    const anime = listed[pick];
+    const title = anime.title.english || anime.title.romaji;
+    const userList2 = watchingMap[guildId][message.author.id] || [];
+    if (userList2.some((w) => w.id === anime.id)) return message.reply(`You're already watching **${title}**!`);
+    userList2.push({ id: anime.id, title, imageUrl: anime.coverImage.medium, username: message.author.username });
+    watchingMap[guildId][message.author.id] = userList2;
+    return message.reply(`Added **${title}** to your watchlist!`);
   }
 });
 
