@@ -1,0 +1,17 @@
+{
+  "name": "anime-season-bot",
+  "version": "1.0.0",
+  "description": "Discord bot that shows seasonal anime and lets users display what they're watching",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.15.3",
+    "dotenv": "^16.4.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
