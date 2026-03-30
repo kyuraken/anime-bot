@@ -34,6 +34,9 @@ const {
 // watchingMap[guildId][userId] = [ { id, title, imageUrl, username, score? } ]
 const watchingMap = {};
 
+// linkedAccounts[guildId][userId] = { anilistUsername }
+const linkedAccounts = {};
+
 // Tracks active reminders to prevent duplicates: Set of "userId-animeId"
 const activeReminders = new Set();
 
@@ -147,6 +150,31 @@ async function fetchAnimeById(id) {
   `;
   const json = await anilistFetch(query, { id });
   return json.data.Media;
+}
+
+async function fetchAniListWatching(anilistUsername) {
+  const query = `
+    query ($userName: String) {
+      MediaListCollection(userName: $userName, type: ANIME, status: CURRENT) {
+        lists {
+          entries {
+            media {
+              id
+              title { english romaji }
+              coverImage { medium }
+              episodes
+              averageScore
+              nextAiringEpisode { episode timeUntilAiring }
+            }
+          }
+        }
+      }
+    }
+  `;
+  const json = await anilistFetch(query, { userName: anilistUsername });
+  if (json.errors) throw new Error(json.errors[0].message);
+  const lists = json.data.MediaListCollection?.lists || [];
+  return lists.flatMap((l) => l.entries.map((e) => e.media));
 }
 
 async function fetchRecommendations(animeId) {
@@ -344,6 +372,21 @@ const commands = [
   new SlashCommandBuilder()
     .setName("clear")
     .setDescription("Remove an anime from your watchlist"),
+
+  new SlashCommandBuilder()
+    .setName("link")
+    .setDescription("Link your AniList account to sync your watching list")
+    .addStringOption((opt) =>
+      opt.setName("username").setDescription("Your AniList username").setRequired(true)
+    ),
+
+  new SlashCommandBuilder()
+    .setName("unlink")
+    .setDescription("Unlink your AniList account"),
+
+  new SlashCommandBuilder()
+    .setName("sync")
+    .setDescription("Sync your AniList watching list to the bot"),
 ].map((cmd) => cmd.toJSON());
 
 // ── Bot Setup ────────────────────────────────────────────────
@@ -989,6 +1032,84 @@ client.on("interactionCreate", async (interaction) => {
       components: [new ActionRowBuilder().addComponents(selectMenu)],
       ephemeral: true,
     });
+  }
+
+  // ── /link ──────────────────────────────────────────────
+  if (interaction.isChatInputCommand() && interaction.commandName === "link") {
+    const username = interaction.options.getString("username");
+
+    // Verify the username exists on AniList before saving
+    await interaction.deferReply({ ephemeral: true });
+    let animeList;
+    try {
+      animeList = await fetchAniListWatching(username);
+    } catch {
+      return interaction.editReply(`Could not find AniList user "**${username}**". Double-check your username and try again.`);
+    }
+
+    if (!linkedAccounts[guildId]) linkedAccounts[guildId] = {};
+    linkedAccounts[guildId][interaction.user.id] = { anilistUsername: username };
+
+    await interaction.editReply(
+      `Linked to AniList account **${username}**! You're currently watching **${animeList.length}** anime on AniList. Use \`/sync\` to import them.`
+    );
+  }
+
+  // ── /unlink ────────────────────────────────────────────
+  if (interaction.isChatInputCommand() && interaction.commandName === "unlink") {
+    if (!linkedAccounts[guildId]?.[interaction.user.id]) {
+      return interaction.reply({ content: "You don't have an AniList account linked.", ephemeral: true });
+    }
+    const { anilistUsername } = linkedAccounts[guildId][interaction.user.id];
+    delete linkedAccounts[guildId][interaction.user.id];
+    await interaction.reply({ content: `Unlinked AniList account **${anilistUsername}**.`, ephemeral: true });
+  }
+
+  // ── /sync ──────────────────────────────────────────────
+  if (interaction.isChatInputCommand() && interaction.commandName === "sync") {
+    const linked = linkedAccounts[guildId]?.[interaction.user.id];
+    if (!linked) {
+      return interaction.reply({ content: "You haven't linked an AniList account yet. Use `/link <username>` first.", ephemeral: true });
+    }
+
+    await interaction.deferReply({ ephemeral: true });
+
+    let animeList;
+    try {
+      animeList = await fetchAniListWatching(linked.anilistUsername);
+    } catch {
+      return interaction.editReply("Could not fetch your AniList watching list. Try again later.");
+    }
+
+    if (!animeList.length) {
+      return interaction.editReply("Your AniList watching list is empty — nothing to sync!");
+    }
+
+    const userList = watchingMap[guildId][interaction.user.id] || [];
+    const existingIds = new Set(userList.map((w) => w.id));
+    const added = [];
+
+    for (const anime of animeList) {
+      if (!existingIds.has(anime.id)) {
+        const title = anime.title.english || anime.title.romaji;
+        userList.push({ id: anime.id, title, imageUrl: anime.coverImage.medium, username: interaction.user.username });
+        added.push(title);
+      }
+    }
+
+    watchingMap[guildId][interaction.user.id] = userList;
+
+    if (!added.length) {
+      return interaction.editReply("Everything from your AniList is already in your watchlist — nothing new to add!");
+    }
+
+    const embed = new EmbedBuilder()
+      .setTitle(`Synced from AniList: ${linked.anilistUsername}`)
+      .setColor(0x02a9ff) // AniList blue
+      .setDescription(added.map((t) => `• ${t}`).join("\n"))
+      .setFooter({ text: `${added.length} anime added • Use /list to see your full watchlist` });
+
+    await interaction.editReply({ embeds: [embed] });
   }
 });
 
