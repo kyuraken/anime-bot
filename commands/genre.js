@@ -1,7 +1,6 @@
 const { SlashCommandBuilder, ActionRowBuilder, StringSelectMenuBuilder, EmbedBuilder } = require("discord.js");
 const { fetchSeasonalByGenre, getCurrentSeason } = require("../utils/anilist");
 const { buildAnimeOptions, formatTimeUntilAiring } = require("../utils/format");
-const { awaitNumber } = require("../utils/prefix");
 const store = require("../utils/store");
 
 function buildGenreEmbed(animeList, genre, season, year) {
@@ -17,7 +16,14 @@ function buildGenreEmbed(animeList, genre, season, year) {
   return new EmbedBuilder()
     .setTitle(`${season} ${year} — ${genre} Anime`)
     .setDescription(text).setColor(0xe67e22)
-    .setFooter({ text: `${animeList.length} results • Reply with a number to add to your watchlist` });
+    .setFooter({ text: `${animeList.length} results • Pick one from the dropdown to add` });
+}
+
+function buildGenreDropdown(animeList) {
+  return new ActionRowBuilder().addComponents(
+    new StringSelectMenuBuilder()
+      .setCustomId("pick_anime").setPlaceholder("Add to watchlist...").addOptions(buildAnimeOptions(animeList))
+  );
 }
 
 module.exports = {
@@ -35,13 +41,7 @@ module.exports = {
     if (!animeList?.length) return interaction.editReply(`No **${season} ${year}** anime found for genre "**${genre}**".`);
 
     store.animeCache[interaction.user.id] = animeList;
-    const selectMenu = new StringSelectMenuBuilder()
-      .setCustomId("pick_anime").setPlaceholder("Add to watchlist...").addOptions(buildAnimeOptions(animeList));
-
-    await interaction.editReply({
-      embeds: [buildGenreEmbed(animeList, genre, season, year)],
-      components: [new ActionRowBuilder().addComponents(selectMenu)],
-    });
+    await interaction.editReply({ embeds: [buildGenreEmbed(animeList, genre, season, year)], components: [buildGenreDropdown(animeList)] });
   },
 
   async prefixRun(message, args) {
@@ -52,17 +52,7 @@ module.exports = {
     const { season, year } = getCurrentSeason();
     if (!animeList?.length) return message.reply(`No **${season} ${year}** anime found for genre "**${genre}**".`);
 
-    const listed = animeList.slice(0, 10);
-    await message.reply({ embeds: [buildGenreEmbed(listed, genre, season, year)] });
-
-    const pick = await awaitNumber(message, "Which one?", listed.length);
-    if (pick === null) return;
-    const anime = listed[pick];
-    const title = anime.title.english || anime.title.romaji;
-    const userList = store.watchingMap[message.guildId][message.author.id] || [];
-    if (userList.some((w) => w.id === anime.id)) return message.reply(`You're already watching **${title}**!`);
-    userList.push({ id: anime.id, title, imageUrl: anime.coverImage.medium, username: message.author.username });
-    store.watchingMap[message.guildId][message.author.id] = userList;
-    return message.reply(`Added **${title}** to your watchlist!`);
+    store.animeCache[message.author.id] = animeList;
+    await message.reply({ embeds: [buildGenreEmbed(animeList, genre, season, year)], components: [buildGenreDropdown(animeList)] });
   },
 };

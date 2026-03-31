@@ -1,7 +1,17 @@
 const { SlashCommandBuilder, ActionRowBuilder, StringSelectMenuBuilder } = require("discord.js");
 const { scoreStars } = require("../utils/format");
-const { awaitNumber } = require("../utils/prefix");
 const store = require("../utils/store");
+
+function buildScoreDropdown(userList) {
+  return new ActionRowBuilder().addComponents(
+    new StringSelectMenuBuilder().setCustomId("score_pick").setPlaceholder("Which anime are you rating?")
+      .addOptions(userList.map((w) => ({
+        label: w.title.slice(0, 100),
+        description: w.score ? `Currently: ${w.score}/10` : "Not yet rated",
+        value: w.id != null ? String(w.id) : w.title.slice(0, 100),
+      })))
+  );
+}
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -20,16 +30,9 @@ module.exports = {
     }
 
     store.pendingScore[interaction.user.id] = rating;
-    const options = userList.map((w) => ({
-      label: w.title.slice(0, 100),
-      description: w.score ? `Currently: ${w.score}/10` : "Not yet rated",
-      value: w.id != null ? String(w.id) : w.title.slice(0, 100),
-    }));
     await interaction.reply({
       content: `Which anime would you like to rate **${rating}/10**?`,
-      components: [new ActionRowBuilder().addComponents(
-        new StringSelectMenuBuilder().setCustomId("score_pick").setPlaceholder("Which anime?").addOptions(options)
-      )],
+      components: [buildScoreDropdown(userList)],
       ephemeral: true,
     });
   },
@@ -52,18 +55,16 @@ module.exports = {
     const rating = Math.round(rawRating * 10) / 10;
     const userList = store.watchingMap[message.guildId]?.[message.author.id];
     if (!userList?.length) return message.reply("You're not watching anything to rate!");
+
     if (userList.length === 1) {
       userList[0].score = rating;
       return message.reply(`Rated **${userList[0].title}**: ${scoreStars(rating)} (${rating}/10)`);
     }
-    const { EmbedBuilder } = require("discord.js");
+
+    store.pendingScore[message.author.id] = rating;
     await message.reply({
-      embeds: [new EmbedBuilder().setTitle("Which anime are you rating?").setColor(0xe8467c)
-        .setDescription(userList.map((w, i) => `**${i + 1}.** ${w.title}${w.score ? ` (currently ${w.score}/10)` : ""}`).join("\n"))],
+      content: `Which anime would you like to rate **${rating}/10**?`,
+      components: [buildScoreDropdown(userList)],
     });
-    const pick = await awaitNumber(message, "Reply with a number:", userList.length);
-    if (pick === null) return;
-    userList[pick].score = rating;
-    return message.reply(`Rated **${userList[pick].title}**: ${scoreStars(rating)} (${rating}/10)`);
   },
 };

@@ -52,7 +52,7 @@ client.on("interactionCreate", async (interaction) => {
   if (interaction.isButton()) {
     if (["seasonal_prev", "seasonal_next"].includes(interaction.customId))
       return client.commands.get("seasonal").handleButton(interaction);
-    if (interaction.customId.startsWith("random_add:"))
+    if (interaction.customId.startsWith("random_add:") || interaction.customId === "random_reroll")
       return client.commands.get("random").handleButton(interaction);
   }
 });
