@@ -47,6 +47,7 @@ client.on("interactionCreate", async (interaction) => {
     if (interaction.customId === "clear_pick") return client.commands.get("clear").handleSelect(interaction);
     if (interaction.customId === "score_pick") return client.commands.get("score").handleSelect(interaction);
     if (interaction.customId === "remind_pick") return client.commands.get("remind").handleSelect(interaction, client);
+    if (interaction.customId === "search_pick") return client.commands.get("search").handleSelect(interaction);
   }
 
   if (interaction.isButton()) {

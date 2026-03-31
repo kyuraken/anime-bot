@@ -119,12 +119,34 @@ async function fetchAniListWatching(anilistUsername) {
   return (json.data.MediaListCollection?.lists || []).flatMap((l) => l.entries.map((e) => e.media));
 }
 
+async function fetchAnimeDetails(id) {
+  const json = await anilistFetch(`
+    query ($id: Int) {
+      Media(id: $id, type: ANIME) {
+        id title { romaji english native }
+        coverImage { large } bannerImage
+        description(asHtml: false)
+        episodes duration averageScore meanScore popularity favourites
+        season seasonYear format source status
+        genres tags { name rank }
+        studios(isMain: true) { nodes { name } }
+        nextAiringEpisode { episode timeUntilAiring }
+        startDate { year month day } endDate { year month day }
+        trailer { id site }
+        relations { edges { relationType node { id title { romaji english } type format } } }
+      }
+    }
+  `, { id });
+  return json.data.Media;
+}
+
 module.exports = {
   getCurrentSeason,
   fetchSeasonalAnime,
   fetchSeasonalByGenre,
   searchAnime,
   fetchAnimeById,
+  fetchAnimeDetails,
   fetchRecommendations,
   fetchAniListWatching,
 };

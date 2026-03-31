@@ -25,8 +25,10 @@ module.exports = {
     if (!userList?.length) return interaction.reply({ content: "You're not watching anything to rate!", ephemeral: true });
 
     if (userList.length === 1) {
+      const title = userList[0].title;
       userList[0].score = rating;
-      return interaction.reply({ content: `Rated **${userList[0].title}**: ${scoreStars(rating)} (${rating}/10)`, ephemeral: true });
+      userList.splice(0, 1);
+      return interaction.reply({ content: `Rated **${title}**: ${scoreStars(rating)} (${rating}/10)\n✅ Removed from your watchlist — nice finish!`, ephemeral: true });
     }
 
     store.pendingScore[interaction.user.id] = rating;
@@ -46,7 +48,12 @@ module.exports = {
     if (!entry) return interaction.editReply({ content: "Could not find that anime.", components: [], embeds: [] });
     entry.score = rating;
     delete store.pendingScore[interaction.user.id];
-    await interaction.editReply({ content: `Rated **${entry.title}**: ${scoreStars(rating)} (${rating}/10)`, components: [], embeds: [] });
+
+    // Remove from watchlist (finished watching)
+    const idx = userList.indexOf(entry);
+    if (idx !== -1) userList.splice(idx, 1);
+
+    await interaction.editReply({ content: `Rated **${entry.title}**: ${scoreStars(rating)} (${rating}/10)\n✅ Removed from your watchlist — nice finish!`, components: [], embeds: [] });
   },
 
   async prefixRun(message, args) {
@@ -57,8 +64,10 @@ module.exports = {
     if (!userList?.length) return message.reply("You're not watching anything to rate!");
 
     if (userList.length === 1) {
+      const title = userList[0].title;
       userList[0].score = rating;
-      return message.reply(`Rated **${userList[0].title}**: ${scoreStars(rating)} (${rating}/10)`);
+      userList.splice(0, 1);
+      return message.reply(`Rated **${title}**: ${scoreStars(rating)} (${rating}/10)\n✅ Removed from your watchlist — nice finish!`);
     }
 
     store.pendingScore[message.author.id] = rating;

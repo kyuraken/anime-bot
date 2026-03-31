@@ -128,7 +128,7 @@ async function runGame(channel) {
     await channel.send({
       embeds: [new EmbedBuilder()
         .setTitle("🎉 Correct!")
-        .setDescription(`<@${winner.id}> got it!\nThe character is **${name}** from **${anime}**.\nThey now have **${scores[winner.id].wins}** win${scores[winner.id].wins !== 1 ? "s" : ""}!`)
+        .setDescription(`<@${winner.id}> got it!\nThe character is **${name}** from **${anime}**.\n🐙 They now have **${scores[winner.id].wins}** tako point${scores[winner.id].wins !== 1 ? "s" : ""}!`)
         .setImage(image)
         .setColor(0x2ecc71)],
     });

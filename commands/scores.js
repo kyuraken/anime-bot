@@ -8,25 +8,25 @@ function buildScoresEmbed(guildId) {
 
   const medals = ["🥇", "🥈", "🥉"];
   return new EmbedBuilder()
-    .setTitle("Anime Guess Leaderboard")
+    .setTitle("🐙 Tako Points Leaderboard")
     .setColor(0xe8467c)
     .setDescription(entries.map(([userId, data], i) =>
-      `${medals[i] || `**${i + 1}.**`} <@${userId}> — **${data.wins}** win${data.wins !== 1 ? "s" : ""}`
+      `${medals[i] || `**${i + 1}.**`} <@${userId}> — **${data.wins}** tako point${data.wins !== 1 ? "s" : ""}`
     ).join("\n"));
 }
 
 module.exports = {
-  data: new SlashCommandBuilder().setName("scores").setDescription("See the anime character guessing leaderboard"),
+  data: new SlashCommandBuilder().setName("scores").setDescription("See the tako points leaderboard"),
 
   async execute(interaction) {
     const embed = buildScoresEmbed(interaction.guildId);
-    if (!embed) return interaction.reply({ content: "No scores yet! Start a game with `/guess`.", ephemeral: true });
+    if (!embed) return interaction.reply({ content: "No tako points yet! Start a game with `/guess`.", ephemeral: true });
     await interaction.reply({ embeds: [embed] });
   },
 
   async prefixRun(message) {
     const embed = buildScoresEmbed(message.guildId);
-    if (!embed) return message.reply("No scores yet! Start a game with `tako guess`.");
+    if (!embed) return message.reply("No tako points yet! Start a game with `tako guess`.");
     return message.reply({ embeds: [embed] });
   },
 };
