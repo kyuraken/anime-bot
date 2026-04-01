@@ -69,30 +69,4 @@ module.exports = {
     }
   },
 
-  // tako postquotes — posts ALL archived quotes to #degeneral (re-posts everything)
-  async prefixPostQuotes(message) {
-    store.ensureGuild(message.guildId);
-    const quotes = store.starboard[message.guildId];
-
-    if (!quotes?.length) {
-      return message.reply(
-        "No archived quotes found.\n\n" +
-        "**Why?** The quote archive only captures ⭐ reactions that happen while the bot is running with the latest code. " +
-        "To add old messages, re-react to them with ⭐ until they hit 3 stars and the bot will pick them up automatically."
-      );
-    }
-
-    const channel = findBoardChannel(message.guild);
-    if (!channel) return message.reply("Could not find a channel named **#degeneral**. Make sure it exists!");
-
-    await message.reply(`Posting **${quotes.length}** quote${quotes.length !== 1 ? "s" : ""} to <#${channel.id}>...`);
-
-    for (const entry of quotes) {
-      await channel.send({ embeds: [buildStarboardEmbed(entry)] });
-      entry.postedToBoard = true;
-      await new Promise((r) => setTimeout(r, 700));
-    }
-    store.save();
-    await message.channel.send(`✅ Done! Posted all **${quotes.length}** quotes to <#${channel.id}>.`);
-  },
 };

@@ -135,11 +135,6 @@ client.on("messageCreate", async (message) => {
   const args = message.content.slice(4).trim().split(/\s+/);
   const commandName = args.shift()?.toLowerCase();
 
-  // Special sub-command: tako postquotes
-  if (commandName === "postquotes") {
-    return client.commands.get("quote").prefixPostQuotes(message);
-  }
-
   const command = client.commands.get(commandName);
   if (command?.prefixRun) await command.prefixRun(message, args, client);
 });
