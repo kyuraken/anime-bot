@@ -33,7 +33,7 @@ async function postEntry(entry, guild) {
 }
 
 module.exports = {
-  data: new SlashCommandBuilder().setName("quote").setDescription("Get a random starred quote from the archive"),
+  data: new SlashCommandBuilder().setName("quote").setDescription("Post a random starred quote to #degeneral"),
 
   buildStarboardEmbed,
   findBoardChannel,
@@ -42,35 +42,57 @@ module.exports = {
   async execute(interaction) {
     const quotes = store.starboard[interaction.guildId];
     if (!quotes?.length) return interaction.reply({ content: "No archived quotes yet! React to messages with ⭐ (3 stars to archive).", ephemeral: true });
+
     const entry = quotes[Math.floor(Math.random() * quotes.length)];
-    await interaction.reply({ embeds: [buildStarboardEmbed(entry)] });
+    const channel = findBoardChannel(interaction.guild);
+
+    if (channel) {
+      await channel.send({ embeds: [buildStarboardEmbed(entry)] });
+      await interaction.reply({ content: `📬 Posted a random quote to <#${channel.id}>!`, ephemeral: true });
+    } else {
+      await interaction.reply({ embeds: [buildStarboardEmbed(entry)] });
+    }
   },
 
   async prefixRun(message) {
     const quotes = store.starboard[message.guildId];
     if (!quotes?.length) return message.reply("No archived quotes yet! React to messages with ⭐ (3 stars to archive).");
+
     const entry = quotes[Math.floor(Math.random() * quotes.length)];
-    await message.reply({ embeds: [buildStarboardEmbed(entry)] });
+    const channel = findBoardChannel(message.guild);
+
+    if (channel) {
+      await channel.send({ embeds: [buildStarboardEmbed(entry)] });
+      await message.reply(`📬 Posted a random quote to <#${channel.id}>!`);
+    } else {
+      await message.reply({ embeds: [buildStarboardEmbed(entry)] });
+    }
   },
 
-  // tako postquotes — posts all unposted archived quotes to #degeneral
+  // tako postquotes — posts ALL archived quotes to #degeneral (re-posts everything)
   async prefixPostQuotes(message) {
+    store.ensureGuild(message.guildId);
     const quotes = store.starboard[message.guildId];
-    if (!quotes?.length) return message.reply("No archived quotes yet!");
 
-    const unposted = quotes.filter((e) => !e.postedToBoard);
-    if (!unposted.length) return message.reply("All quotes have already been posted to #degeneral!");
+    if (!quotes?.length) {
+      return message.reply(
+        "No archived quotes found.\n\n" +
+        "**Why?** The quote archive only captures ⭐ reactions that happen while the bot is running with the latest code. " +
+        "To add old messages, re-react to them with ⭐ until they hit 3 stars and the bot will pick them up automatically."
+      );
+    }
 
     const channel = findBoardChannel(message.guild);
     if (!channel) return message.reply("Could not find a channel named **#degeneral**. Make sure it exists!");
 
-    await message.reply(`Posting **${unposted.length}** archived quote${unposted.length !== 1 ? "s" : ""} to <#${channel.id}>...`);
+    await message.reply(`Posting **${quotes.length}** quote${quotes.length !== 1 ? "s" : ""} to <#${channel.id}>...`);
 
-    for (const entry of unposted) {
+    for (const entry of quotes) {
       await channel.send({ embeds: [buildStarboardEmbed(entry)] });
       entry.postedToBoard = true;
-      await new Promise((r) => setTimeout(r, 600)); // small delay to avoid rate limits
+      await new Promise((r) => setTimeout(r, 700));
     }
     store.save();
+    await message.channel.send(`✅ Done! Posted all **${quotes.length}** quotes to <#${channel.id}>.`);
   },
 };
