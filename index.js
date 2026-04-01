@@ -62,7 +62,7 @@ client.on("interactionCreate", async (interaction) => {
   }
 });
 
-// ── Starboard (⭐ reaction → archive for /quote) ────────────
+// ── Starboard (⭐ reaction → archive + post to #degeneral) ───
 client.on("messageReactionAdd", async (reaction, user) => {
   if (user.bot) return;
   if (reaction.emoji.name !== "⭐") return;
@@ -79,12 +79,11 @@ client.on("messageReactionAdd", async (reaction, user) => {
   if (!msg.guildId) return;
 
   const starCount = reaction.count;
-  if (starCount < STAR_THRESHOLD) return;
 
   store.ensureGuild(msg.guildId);
   const board = store.starboard[msg.guildId];
 
-  // Check if already archived
+  // If already archived, just update star count
   const existing = board.find((e) => e.messageId === msg.id);
   if (existing) {
     existing.stars = starCount;
@@ -92,13 +91,16 @@ client.on("messageReactionAdd", async (reaction, user) => {
     return;
   }
 
+  // Not yet archived — check if we just hit the threshold
+  if (starCount < STAR_THRESHOLD) return;
+
   // Find first image attachment or embed image
   const imageUrl =
     msg.attachments.find((a) => a.contentType?.startsWith("image/"))?.url ||
     msg.embeds.find((e) => e.image?.url)?.image?.url ||
     null;
 
-  board.push({
+  const entry = {
     messageId: msg.id,
     content: msg.content || null,
     authorTag: msg.author.tag,
@@ -107,10 +109,20 @@ client.on("messageReactionAdd", async (reaction, user) => {
     imageUrl,
     stars: starCount,
     timestamp: msg.createdTimestamp,
-  });
+    postedToBoard: false,
+  };
 
+  board.push(entry);
+
+  // Post to #degeneral
+  const quoteCmd = client.commands.get("quote");
+  const posted = await quoteCmd.postEntry(entry, msg.guild);
   store.save();
-  await msg.channel.send(`⭐ **Archived!** A message by **${msg.author.displayName}** has been saved to the quote board! Use \`/quote\` or \`tako quote\` to see random quotes.`);
+
+  if (!posted) {
+    // degeneral not found — just notify in place
+    await msg.channel.send(`⭐ **Archived!** A message by **${msg.author.displayName}** has been saved. Use \`tako quote\` to see it! (Tip: create a **#degeneral** channel to auto-post archives there.)`);
+  }
 });
 
 // ── Prefix commands (tako <command>) ─────────────────────────
@@ -122,8 +134,13 @@ client.on("messageCreate", async (message) => {
 
   const args = message.content.slice(4).trim().split(/\s+/);
   const commandName = args.shift()?.toLowerCase();
-  const command = client.commands.get(commandName);
 
+  // Special sub-command: tako postquotes
+  if (commandName === "postquotes") {
+    return client.commands.get("quote").prefixPostQuotes(message);
+  }
+
+  const command = client.commands.get(commandName);
   if (command?.prefixRun) await command.prefixRun(message, args, client);
 });
 
