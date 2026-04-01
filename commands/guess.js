@@ -124,6 +124,7 @@ async function runGame(channel) {
     if (!scores[winner.id]) scores[winner.id] = { wins: 0, username: winner.username };
     scores[winner.id].wins++;
     scores[winner.id].username = winner.username;
+    store.save();
 
     await channel.send({
       embeds: [new EmbedBuilder()

@@ -28,6 +28,7 @@ module.exports = {
       const title = userList[0].title;
       userList[0].score = rating;
       userList.splice(0, 1);
+      store.save();
       return interaction.reply({ content: `Rated **${title}**: ${scoreStars(rating)} (${rating}/10)\n✅ Removed from your watchlist — nice finish!`, ephemeral: true });
     }
 
@@ -52,6 +53,7 @@ module.exports = {
     // Remove from watchlist (finished watching)
     const idx = userList.indexOf(entry);
     if (idx !== -1) userList.splice(idx, 1);
+    store.save();
 
     await interaction.editReply({ content: `Rated **${entry.title}**: ${scoreStars(rating)} (${rating}/10)\n✅ Removed from your watchlist — nice finish!`, components: [], embeds: [] });
   },
@@ -67,6 +69,7 @@ module.exports = {
       const title = userList[0].title;
       userList[0].score = rating;
       userList.splice(0, 1);
+      store.save();
       return message.reply(`Rated **${title}**: ${scoreStars(rating)} (${rating}/10)\n✅ Removed from your watchlist — nice finish!`);
     }
 

@@ -1,9 +1,11 @@
 require("dotenv").config();
 const fs = require("fs");
 const path = require("path");
-const { Client, GatewayIntentBits, REST, Routes, Collection } = require("discord.js");
+const { Client, GatewayIntentBits, Partials, REST, Routes, Collection } = require("discord.js");
 const store = require("./utils/store");
 const handlePickAnime = require("./handlers/pickAnime");
+
+const STAR_THRESHOLD = 3;
 
 const client = new Client({
   intents: [
@@ -11,7 +13,9 @@ const client = new Client({
     GatewayIntentBits.DirectMessages,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildMessageReactions,
   ],
+  partials: [Partials.Message, Partials.Reaction],
 });
 
 // ── Load commands ────────────────────────────────────────────
@@ -56,6 +60,57 @@ client.on("interactionCreate", async (interaction) => {
     if (interaction.customId.startsWith("random_add:") || interaction.customId === "random_reroll")
       return client.commands.get("random").handleButton(interaction);
   }
+});
+
+// ── Starboard (⭐ reaction → archive for /quote) ────────────
+client.on("messageReactionAdd", async (reaction, user) => {
+  if (user.bot) return;
+  if (reaction.emoji.name !== "⭐") return;
+
+  // Handle partial reactions (uncached messages)
+  if (reaction.partial) {
+    try { await reaction.fetch(); } catch { return; }
+  }
+  if (reaction.message.partial) {
+    try { await reaction.message.fetch(); } catch { return; }
+  }
+
+  const msg = reaction.message;
+  if (!msg.guildId) return;
+
+  const starCount = reaction.count;
+  if (starCount < STAR_THRESHOLD) return;
+
+  store.ensureGuild(msg.guildId);
+  const board = store.starboard[msg.guildId];
+
+  // Check if already archived
+  const existing = board.find((e) => e.messageId === msg.id);
+  if (existing) {
+    existing.stars = starCount;
+    store.save();
+    return;
+  }
+
+  // Find first image attachment or embed image
+  const imageUrl =
+    msg.attachments.find((a) => a.contentType?.startsWith("image/"))?.url ||
+    msg.embeds.find((e) => e.image?.url)?.image?.url ||
+    null;
+
+  board.push({
+    messageId: msg.id,
+    content: msg.content || null,
+    authorTag: msg.author.tag,
+    authorAvatar: msg.author.displayAvatarURL(),
+    channelId: msg.channelId,
+    imageUrl,
+    stars: starCount,
+    timestamp: msg.createdTimestamp,
+  });
+
+  store.save();
+  await msg.channel.send(`⭐ **Archived!** A message by **${msg.author.displayName}** has been saved to the quote board! Use \`/quote\` or \`tako quote\` to see random quotes.`);
 });
 
 // ── Prefix commands (tako <command>) ─────────────────────────

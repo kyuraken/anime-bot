@@ -33,6 +33,7 @@ module.exports = {
 
     if (selectedVal === "__clear_all__") {
       delete store.watchingMap[guildId][interaction.user.id];
+      store.save();
       return interaction.editReply({ content: "Cleared your entire watchlist.", components: [], embeds: [] });
     }
 
@@ -41,6 +42,7 @@ module.exports = {
 
     const removed = userList.splice(idx, 1)[0];
     if (!userList.length) delete store.watchingMap[guildId][interaction.user.id];
+    store.save();
     await interaction.editReply({ content: `Removed **${removed.title}** from your watchlist.`, components: [], embeds: [] });
   },
 

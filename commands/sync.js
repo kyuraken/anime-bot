@@ -18,6 +18,7 @@ async function doSync(guildId, userId, username) {
     }
   }
   store.watchingMap[guildId][userId] = userList;
+  store.save();
   return { added, total: animeList.length };
 }
 

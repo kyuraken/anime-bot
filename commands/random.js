@@ -46,6 +46,7 @@ module.exports = {
     if (userList.some((w) => w.id === anime.id)) return interaction.editReply({ content: `You're already watching **${title}**!`, components: [] });
     userList.push({ id: anime.id, title, imageUrl: anime.coverImage.medium, username: interaction.user.username });
     store.watchingMap[guildId][interaction.user.id] = userList;
+    store.save();
     await interaction.editReply({ content: `Added **${title}** to your watchlist!`, components: [] });
   },
 

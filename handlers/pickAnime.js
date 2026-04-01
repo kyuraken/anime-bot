@@ -42,6 +42,7 @@ module.exports = async function handlePickAnime(interaction) {
     inline: true,
   });
 
+  store.save();
   await interaction.editReply({ content: `Added **${title}** to your watchlist! (${userList.length} total)`, components: [], embeds: [] });
   await interaction.channel.send({ embeds: [announceEmbed] });
 };

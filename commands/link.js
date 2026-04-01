@@ -17,6 +17,7 @@ module.exports = {
     }
     store.ensureGuild(interaction.guildId);
     store.linkedAccounts[interaction.guildId][interaction.user.id] = { anilistUsername: username };
+    store.save();
     await interaction.editReply(`Linked to AniList account **${username}**! You're watching **${animeList.length}** anime there. Use \`/sync\` to import them.`);
   },
 
@@ -29,6 +30,7 @@ module.exports = {
     }
     store.ensureGuild(message.guildId);
     store.linkedAccounts[message.guildId][message.author.id] = { anilistUsername: username };
+    store.save();
     return message.reply(`Linked to AniList account **${username}**! Currently watching **${animeList.length}** anime. Use \`tako sync\` to import them.`);
   },
 };

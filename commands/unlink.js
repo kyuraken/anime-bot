@@ -8,6 +8,7 @@ module.exports = {
     const linked = store.linkedAccounts[interaction.guildId]?.[interaction.user.id];
     if (!linked) return interaction.reply({ content: "You don't have an AniList account linked.", ephemeral: true });
     delete store.linkedAccounts[interaction.guildId][interaction.user.id];
+    store.save();
     await interaction.reply({ content: `Unlinked AniList account **${linked.anilistUsername}**.`, ephemeral: true });
   },
 
@@ -15,6 +16,7 @@ module.exports = {
     const linked = store.linkedAccounts[message.guildId]?.[message.author.id];
     if (!linked) return message.reply("You don't have an AniList account linked.");
     delete store.linkedAccounts[message.guildId][message.author.id];
+    store.save();
     return message.reply(`Unlinked AniList account **${linked.anilistUsername}**.`);
   },
 };
