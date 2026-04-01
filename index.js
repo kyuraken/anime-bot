@@ -115,14 +115,12 @@ client.on("messageReactionAdd", async (reaction, user) => {
   board.push(entry);
 
   // Post to #degeneral
-  const quoteCmd = client.commands.get("quote");
-  const posted = await quoteCmd.postEntry(entry, msg.guild);
-  store.save();
-
-  if (!posted) {
-    // degeneral not found — just notify in place
-    await msg.channel.send(`⭐ **Archived!** A message by **${msg.author.displayName}** has been saved. Use \`tako quote\` to see it! (Tip: create a **#degeneral** channel to auto-post archives there.)`);
+  const boardChannel = msg.guild.channels.cache.find((c) => c.name === "degeneral" && c.isTextBased());
+  if (boardChannel) {
+    const { buildStarboardEmbed } = client.commands.get("quote");
+    await boardChannel.send({ embeds: [buildStarboardEmbed(entry)] });
   }
+  store.save();
 });
 
 // ── Prefix commands (tako <command>) ─────────────────────────
