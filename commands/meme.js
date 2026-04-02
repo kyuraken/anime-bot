@@ -5,6 +5,7 @@ async function getRandomImage(channel) {
   const images = [];
 
   for (const msg of messages.values()) {
+    if (msg.author.bot) continue;
     for (const att of msg.attachments.values()) {
       if (att.contentType?.startsWith("image/")) {
         images.push({ url: att.url, author: msg.author });
